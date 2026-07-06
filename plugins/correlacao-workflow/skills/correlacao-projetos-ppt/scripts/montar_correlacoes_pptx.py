@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Monta o PPT de resultado da skill correlacao-projetos-ppt no template visual
-oficial da Advisia (o mesmo estilo de `correlacoes_eletrodomesticos.pptx`).
+Monta o PPT de resultado da skill correlacao-projetos-ppt.
 
 Uso:
-    python3 montar_correlacoes_pptx.py dados.json saida.pptx
+    python3 montar_correlacoes_pptx.py dados.json saida.pptx [--estilo estilo.json]
 
 Onde dados.json tem o formato:
 {
@@ -16,15 +15,38 @@ Onde dados.json tem o formato:
       "nome": "O aroma como atributo de design",
       "itens": ["6 - Cheiro", "3 - Geladeira", "4 - Forno", "1 - Cigarro"],
       "explicacao": "texto da correlação..."
-    },
-    ...
+    }
   ]
 }
 
-Não adivinhe conteúdo aqui — este script só aplica o estilo visual (cores,
-fontes, posições). Os clusters, nomes e explicações vêm do raciocínio feito
+E estilo.json (opcional, gerado por scripts/extrair_estilo_pptx.py a partir
+de um .pptx de referência real) tem o formato:
+{
+  "fonte": "Georgia",
+  "cor_barra_titulo": "1F1F4A",
+  "cor_barra_cluster": "C99A2E",
+  "cor_texto_titulo": "1F1F4A",
+  "cor_texto_corpo": "333333",
+  "cor_texto_rodape": "C99A2E",
+  "cor_texto_barra": "FFFFFF"
+}
+
+Por que existe --estilo em vez de cor fixa: o objetivo e sempre usar as
+cores REAIS do template de referencia, lidas diretamente do arquivo. Isso so
+e possivel quando voce tem os bytes do arquivo (upload local, ou pasta
+local/OneDrive) - rode extrair_estilo_pptx.py nele primeiro. Quando a unica
+fonte disponivel e texto vindo do conector Microsoft 365 (que nao expoe
+bytes/tema), nao tem como ler a cor real; nesse caso o script cai nos valores
+abaixo, que sao a ultima copia de cores REAIS conhecidas do template da
+Advisia (extraidas de bytes reais em execucao anterior) - nao sao um "chute"
+generico, mas tambem nao sao garantidas de bater com uma eventual atualizacao
+visual do template. Sempre prefira rodar com --estilo quando tiver o arquivo.
+
+Nao adivinhe conteudo aqui - este script so aplica o estilo visual (cores,
+fontes, posicoes). Os clusters, nomes e explicacoes vem do raciocinio feito
 nos Passos 3 e 4 do SKILL.md.
 """
+import argparse
 import json
 import sys
 
@@ -32,11 +54,18 @@ from pptx import Presentation
 from pptx.util import Emu, Pt
 from pptx.dml.color import RGBColor
 
-NAVY = RGBColor(0x1F, 0x1F, 0x4A)
-GOLD = RGBColor(0xC9, 0x9A, 0x2E)
-GRAY = RGBColor(0x33, 0x33, 0x33)
-WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-FONT = "Georgia"
+# Ultima copia conhecida de cores REAIS do template Advisia, extraidas de
+# bytes reais do arquivo correlacoes_eletrodomesticos.pptx (nao inventadas).
+# Usada so como fallback quando --estilo nao e passado.
+ESTILO_PADRAO = {
+    "fonte": "Georgia",
+    "cor_barra_titulo": "1F1F4A",
+    "cor_barra_cluster": "C99A2E",
+    "cor_texto_titulo": "1F1F4A",
+    "cor_texto_corpo": "333333",
+    "cor_texto_rodape": "C99A2E",
+    "cor_texto_barra": "FFFFFF",
+}
 
 SIDEBAR_W = Emu(2926080)
 SLIDE_W = Emu(12192000)
@@ -45,7 +74,24 @@ CONTENT_X = Emu(3291840)
 CONTENT_W = Emu(8229600)
 
 
-def add_textbox(slide, x, y, w, h, text, size, bold, color, align="l"):
+def carregar_estilo(caminho):
+    if not caminho:
+        return dict(ESTILO_PADRAO)
+    with open(caminho, encoding="utf-8") as f:
+        lido = json.load(f)
+    estilo = dict(ESTILO_PADRAO)
+    for chave, valor in lido.items():
+        if valor:
+            estilo[chave] = valor
+    return estilo
+
+
+def hex_to_rgb(hex_str):
+    hex_str = hex_str.lstrip("#")
+    return RGBColor(int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16))
+
+
+def add_textbox(slide, x, y, w, h, text, size, bold, color, font, align="l"):
     box = slide.shapes.add_textbox(x, y, w, h)
     tf = box.text_frame
     tf.word_wrap = True
@@ -55,13 +101,13 @@ def add_textbox(slide, x, y, w, h, text, size, bold, color, align="l"):
     run.text = text
     run.font.size = Pt(size)
     run.font.bold = bold
-    run.font.name = color and FONT or FONT
+    run.font.name = font
     run.font.color.rgb = color
     return box
 
 
 def add_sidebar(slide, color):
-    rect = slide.shapes.add_shape(1, Emu(0), Emu(0), SIDEBAR_W, SLIDE_H)  # 1 = MSO_SHAPE.RECTANGLE
+    rect = slide.shapes.add_shape(1, Emu(0), Emu(0), SIDEBAR_W, SLIDE_H)
     rect.fill.solid()
     rect.fill.fore_color.rgb = color
     rect.line.fill.background()
@@ -69,43 +115,58 @@ def add_sidebar(slide, color):
     return rect
 
 
-def build_title_slide(prs, titulo, subtitulo, rodape_data):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])  # layout em branco
-    add_sidebar(slide, NAVY)
+def build_title_slide(prs, estilo, titulo, subtitulo, rodape_data):
+    font = estilo["fonte"]
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_sidebar(slide, hex_to_rgb(estilo["cor_barra_titulo"]))
     add_textbox(slide, CONTENT_X, Emu(2377440), CONTENT_W, Emu(1097280),
-                titulo, 40, True, NAVY)
+                titulo, 40, True, hex_to_rgb(estilo["cor_texto_titulo"]), font)
     add_textbox(slide, CONTENT_X, Emu(3291840), CONTENT_W, Emu(731520),
-                subtitulo, 18, False, GRAY)
+                subtitulo, 18, False, hex_to_rgb(estilo["cor_texto_corpo"]), font)
     add_textbox(slide, CONTENT_X, Emu(3840480), CONTENT_W, Emu(548640),
-                rodape_data, 14, True, GOLD)
+                rodape_data, 14, True, hex_to_rgb(estilo["cor_texto_rodape"]), font)
     return slide
 
 
-def build_cluster_slide(prs, nome, itens, explicacao):
+def build_cluster_slide(prs, estilo, nome, itens, explicacao):
+    font = estilo["fonte"]
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    add_sidebar(slide, GOLD)
+    add_sidebar(slide, hex_to_rgb(estilo["cor_barra_cluster"]))
 
-    # lista de itens do cluster, empilhados na sidebar (0.5" cada, a partir de 0.7")
     y = 640080
     for item in itens:
         add_textbox(slide, Emu(274320), Emu(y), Emu(2377440), Emu(457200),
-                    item, 16, True, WHITE)
+                    item, 16, True, hex_to_rgb(estilo["cor_texto_barra"]), font)
         y += 457200
 
     add_textbox(slide, CONTENT_X, Emu(640080), CONTENT_W, Emu(914400),
-                nome, 28, True, NAVY)
+                nome, 28, True, hex_to_rgb(estilo["cor_texto_titulo"]), font)
     add_textbox(slide, CONTENT_X, Emu(1737360), CONTENT_W, Emu(4389120),
-                explicacao, 16, False, GRAY)
+                explicacao, 16, False, hex_to_rgb(estilo["cor_texto_corpo"]), font)
     return slide
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("Uso: python3 montar_correlacoes_pptx.py dados.json saida.pptx", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dados_json")
+    parser.add_argument("saida_pptx")
+    parser.add_argument(
+        "--estilo",
+        help="JSON de estilo gerado por extrair_estilo_pptx.py a partir de um .pptx real. "
+        "Se omitido, usa a ultima copia conhecida das cores reais da Advisia.",
+    )
+    args = parser.parse_args()
 
-    with open(sys.argv[1], encoding="utf-8") as f:
+    with open(args.dados_json, encoding="utf-8") as f:
         dados = json.load(f)
+
+    estilo = carregar_estilo(args.estilo)
+    if not args.estilo:
+        print(
+            "[aviso] Rodando sem --estilo - usando ultima copia conhecida das cores "
+            "reais da Advisia, nao uma leitura ao vivo do template.",
+            file=sys.stderr,
+        )
 
     prs = Presentation()
     prs.slide_width = SLIDE_W
@@ -113,6 +174,7 @@ def main():
 
     build_title_slide(
         prs,
+        estilo,
         dados.get("titulo", "Correlações entre Projetos"),
         dados.get("subtitulo", ""),
         dados.get("rodape_data", ""),
@@ -121,13 +183,14 @@ def main():
     for cluster in dados.get("clusters", []):
         build_cluster_slide(
             prs,
+            estilo,
             cluster["nome"],
             cluster.get("itens", []),
             cluster.get("explicacao", ""),
         )
 
-    prs.save(sys.argv[2])
-    print(f"PPT salvo em {sys.argv[2]}")
+    prs.save(args.saida_pptx)
+    print(f"PPT salvo em {args.saida_pptx}")
 
 
 if __name__ == "__main__":
