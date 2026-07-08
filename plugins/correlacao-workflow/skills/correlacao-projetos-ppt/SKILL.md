@@ -24,7 +24,8 @@ O valor da skill está em achar conexões não óbvias: dois termos podem não t
 2. Destilar o termo-chave de cada item.
 3. Agrupar por correlação semântica.
 4. Montar o PPT de resultado, no estilo visual da Advisia quando possível.
-5. Entregar o arquivo.
+5. Registrar as fontes usadas (obrigatório neste MVP — ver seção 5).
+6. Entregar o arquivo.
 
 ## 1. Obter a lista de termos
 
@@ -41,6 +42,12 @@ Existem três formas de o usuário fornecer os termos. Identifique qual se aplic
 - Se não indicou e o conector Microsoft 365 estiver disponível, pergunte qual pasta/site usar — não presuma automaticamente uma pasta específica como fonte de dados reais, mesmo que ela exista e pareça óbvia (ex: uma pasta de exemplo/template do repositório). Uma vez confirmada a pasta, use `sharepoint_folder_search` para localizá-la e `read_resource` para listar subpastas e ler cada `.pptx`.
 - Se o conector não estiver disponível, procure uma pasta local/OneDrive com o nome indicado pelo usuário.
 - Se nenhuma fonte for encontrada, pergunte — não adivinhe.
+
+**Subpasta dedicada de template (não é um projeto).** Dentro da pasta raiz confirmada, é comum haver uma subpasta ao lado das pastas numeradas de projeto (1, 2, 3...) chamada exatamente `template` (aceite variações óbvias de capitalização/pontuação, ex. `Template`, `_template`). Essa subpasta **não é um item a correlacionar** — trate-a assim:
+- Exclua o conteúdo dela da lista de termos/projetos do Passo 2 e 3. O `.pptx` de dentro não entra como mais um termo.
+- Use-a como referência de estilo no Passo 4: se os bytes estiverem disponíveis (pasta local/OneDrive), rode `scripts/extrair_estilo_pptx.py` no `.pptx` dela normalmente. Se ela só for acessível via conector M365 (texto, sem bytes), você sabe que existe um template dedicado mas não consegue extrair cor/fonte dele mesmo assim — avise o usuário e caia no fallback do Passo 4 (última cópia conhecida das cores da Advisia).
+- Se houver mais de uma subpasta com nome parecido a "template" na raiz, ou nenhuma, não assuma qual usar — pergunte ao usuário.
+- Registre no Passo 6 (fontes) que a pasta `template` foi identificada e usada só como referência de estilo, não como dado correlacionado.
 
 ## 2. Destilar o termo-chave de cada item
 
@@ -66,9 +73,16 @@ Monte um JSON com o conteúdo dos clusters (formato abaixo) e use os scripts da 
   "rodape_data": "<fonte dos dados> — <data de hoje>",
   "clusters": [
     {"nome": "<nome do cluster>", "itens": ["<termo 1>", "<termo 2>"], "explicacao": "<parágrafo da correlação>"}
+  ],
+  "fontes": [
+    "1 - Cigarro (correlacionado)",
+    "2 - Sódio (correlacionado)",
+    "template (usado só como referência de estilo, não entrou na correlação)"
   ]
 }
 ```
+
+O campo `fontes` alimenta o slide de transparência do Passo 5 — veja abaixo.
 
 **Sobre as cores do template — sempre prefira ler ao vivo em vez de usar cor fixa:**
 
@@ -77,7 +91,15 @@ Monte um JSON com o conteúdo dos clusters (formato abaixo) e use os scripts da 
 - Resolução de caminho dos scripts (funciona solto ou empacotado como plugin): use `$CLAUDE_PLUGIN_ROOT/skills/correlacao-projetos-ppt/scripts/<nome>.py` se a variável existir; senão, o caminho relativo ao diretório base da skill; só em último caso, `find ~/.claude/skills ~/.claude-plugin-cache -name "<nome>.py"`.
 - Só use um layout limpo sem o template Advisia se o usuário pedir algo fora desse estilo, ou se os scripts falharem tecnicamente — nunca como substituto silencioso.
 
-## 5. Entregar
+## 5. Registrar as fontes usadas (obrigatório neste MVP)
+
+Como este é um MVP em validação, é preciso ficar explícito de onde veio cada correlação — não basta o resultado final, alguém revisando precisa conseguir checar rapidamente o que entrou como dado.
+
+- Preencha o campo `fontes` do JSON (Passo 4) com **todas** as pastas/arquivos lidos, marcando ao lado de cada um se ele **entrou na correlação semântica** ou foi **usado só como referência de estilo** (caso da subpasta `template`) ou **ignorado** (e por quê, se relevante).
+- O script `montar_correlacoes_pptx.py` usa esse campo para gerar automaticamente um slide final "Fontes utilizadas nesta análise (MVP)" listando cada item e sua classificação — não pule esse slide nem omita o campo `fontes` para "limpar" o resultado.
+- Além do slide, mencione as mesmas fontes em texto na entrega ao usuário (Passo 6), para o caso de ele não abrir o PPT imediatamente.
+
+## 6. Entregar
 
 Salve como `correlacoes.pptx` numa subpasta `outputs/` local, copie para a pasta de trabalho do usuário e apresente o arquivo.
 
