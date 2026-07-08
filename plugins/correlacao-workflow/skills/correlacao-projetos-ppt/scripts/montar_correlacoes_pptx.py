@@ -146,6 +146,24 @@ def build_cluster_slide(prs, estilo, nome, itens, explicacao):
     return slide
 
 
+def build_fontes_slide(prs, estilo, fontes):
+    font = estilo["fonte"]
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    add_sidebar(slide, hex_to_rgb(estilo["cor_barra_cluster"]))
+
+    add_textbox(slide, CONTENT_X, Emu(640080), CONTENT_W, Emu(731520),
+                "Fontes utilizadas nesta análise (MVP)", 28, True,
+                hex_to_rgb(estilo["cor_texto_titulo"]), font)
+
+    y = Emu(1554480)
+    line_h = Emu(365760)
+    for fonte in fontes:
+        add_textbox(slide, CONTENT_X, y, CONTENT_W, line_h,
+                    f"- {fonte}", 14, False, hex_to_rgb(estilo["cor_texto_corpo"]), font)
+        y = Emu(int(y) + int(line_h))
+    return slide
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("dados_json")
@@ -187,6 +205,16 @@ def main():
             cluster["nome"],
             cluster.get("itens", []),
             cluster.get("explicacao", ""),
+        )
+
+    fontes = dados.get("fontes", [])
+    if fontes:
+        build_fontes_slide(prs, estilo, fontes)
+    else:
+        print(
+            "[aviso] Nenhuma fonte informada em 'fontes' - o slide de "
+            "transparencia (MVP) nao sera gerado.",
+            file=sys.stderr,
         )
 
     prs.save(args.saida_pptx)
